@@ -83,6 +83,6 @@ public class SardineFactory
 	 */
 	public static Sardine begin(String username, String password, SSLSocketFactory sslSocketFactory, HttpRoutePlanner routePlanner) throws SardineException
 	{
-		return Factory.instance().begin(username, password, sslSocketFactory);
+		return Factory.instance().begin(username, password, sslSocketFactory, routePlanner);
 	}
 }

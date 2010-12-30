@@ -11,6 +11,7 @@ import org.apache.http.HttpVersion;
 import org.apache.http.StatusLine;
 import org.apache.http.auth.AuthScope;
 import org.apache.http.auth.Credentials;
+import org.apache.http.auth.NTCredentials;
 import org.apache.http.auth.UsernamePasswordCredentials;
 import org.apache.http.client.methods.HttpDelete;
 import org.apache.http.client.methods.HttpGet;
@@ -32,6 +33,7 @@ import org.apache.http.params.BasicHttpParams;
 import org.apache.http.params.HttpParams;
 import org.apache.http.params.HttpProtocolParams;
 
+import com.googlecode.sardine.auth.NTLMSchemeFactory;
 import com.googlecode.sardine.model.Creationdate;
 import com.googlecode.sardine.model.Getcontentlength;
 import com.googlecode.sardine.model.Getcontenttype;
@@ -82,10 +84,16 @@ public class SardineImpl implements Sardine
 	{
 		this.factory = factory;
 
+		String host = System.getProperty("http.proxyHost");
+		String user = System.getProperty("http.proxyUser");
+		int n = user == null?-1:user.indexOf("\\");
+		String domain = n == -1?System.getProperty("http.auth.ntlm.domain"):user.substring(0, n);
+		String proxy_username = n == -1?user:user.substring(n + 1);
+		String proxy_password = System.getProperty("http.proxyPassword");
 		HttpParams params = new BasicHttpParams();
-        ConnManagerParams.setMaxTotalConnections(params, 100);
-        HttpProtocolParams.setVersion(params, HttpVersion.HTTP_1_1);
-        HttpProtocolParams.setUserAgent(params, "Sardine/" + Version.getSpecification());
+		ConnManagerParams.setMaxTotalConnections(params, 100);
+		HttpProtocolParams.setVersion(params, HttpVersion.HTTP_1_1);
+		HttpProtocolParams.setUserAgent(params, "Sardine/" + Version.getSpecification());
 
 		SchemeRegistry schemeRegistry = new SchemeRegistry();
 		schemeRegistry.register(new Scheme("http", PlainSocketFactory.getSocketFactory(), 80));
@@ -101,12 +109,23 @@ public class SardineImpl implements Sardine
 		if (routePlanner != null)
 			this.client.setRoutePlanner(routePlanner);
 
+		if (domain != null)
+		{
+			// register NTLM authentication factory
+			this.client.getAuthSchemes().register("ntlm", new NTLMSchemeFactory());
+			 //  use NTLM credentials
+			this.client.getCredentialsProvider().setCredentials(
+			new AuthScope(AuthScope.ANY_HOST, AuthScope.ANY_PORT, AuthScope.ANY_REALM, "ntlm"),
+			new NTCredentials(proxy_username, proxy_password, host, domain));
+		}
+
 		if ((username != null) && (password != null))
 		{
+			// use standard authentications (BASIC or DIGEST)
 			this.client.getCredentialsProvider().setCredentials(
-	                new AuthScope(AuthScope.ANY_HOST, AuthScope.ANY_PORT),
-	                new UsernamePasswordCredentials(username, password));
-
+			new AuthScope(AuthScope.ANY_HOST, AuthScope.ANY_PORT, AuthScope.ANY_REALM, "basic"),
+			new UsernamePasswordCredentials(username, password));
+			
 			this.authEnabled = true;
 		}
 	}
