@@ -5,12 +5,10 @@ import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.List;
 
-import org.apache.commons.codec.binary.Base64;
 import org.apache.http.HttpResponse;
 import org.apache.http.HttpVersion;
 import org.apache.http.StatusLine;
 import org.apache.http.auth.AuthScope;
-import org.apache.http.auth.Credentials;
 import org.apache.http.auth.NTCredentials;
 import org.apache.http.auth.UsernamePasswordCredentials;
 import org.apache.http.client.methods.HttpDelete;
@@ -27,6 +25,7 @@ import org.apache.http.conn.scheme.SchemeRegistry;
 import org.apache.http.conn.ssl.SSLSocketFactory;
 import org.apache.http.entity.ByteArrayEntity;
 import org.apache.http.entity.InputStreamEntity;
+import org.apache.http.impl.auth.DigestSchemeFactory;
 import org.apache.http.impl.client.DefaultHttpClient;
 import org.apache.http.impl.conn.tsccm.ThreadSafeClientConnManager;
 import org.apache.http.params.BasicHttpParams;
@@ -122,8 +121,9 @@ public class SardineImpl implements Sardine
 		if ((username != null) && (password != null))
 		{
 			// use standard authentications (BASIC or DIGEST)
+			this.client.getAuthSchemes().register("digest", new DigestSchemeFactory());
 			this.client.getCredentialsProvider().setCredentials(
-			new AuthScope(AuthScope.ANY_HOST, AuthScope.ANY_PORT, AuthScope.ANY_REALM, "basic"),
+	                new AuthScope(AuthScope.ANY_HOST, AuthScope.ANY_PORT, AuthScope.ANY_REALM, "digest"),
 			new UsernamePasswordCredentials(username, password));
 			
 			this.authEnabled = true;
@@ -430,13 +430,6 @@ public class SardineImpl implements Sardine
 	{
 		try
 		{
-			if (this.authEnabled)
-			{
-				Credentials creds = this.client.getCredentialsProvider().getCredentials(AuthScope.ANY);
-				String value = "Basic " + new String(Base64.encodeBase64(new String(creds.getUserPrincipal().getName() + ":" + creds.getPassword()).getBytes()));
-				base.setHeader("Authorization", value);
-			}
-
 			return this.client.execute(base);
 		}
 		catch (IOException ex)
