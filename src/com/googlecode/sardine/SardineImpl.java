@@ -4,10 +4,16 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.HashMap;
+import java.util.Map;
 
+import org.apache.commons.codec.binary.Base64;
 import org.apache.http.HttpResponse;
 import org.apache.http.HttpVersion;
 import org.apache.http.StatusLine;
+import org.apache.http.Header;
+import org.apache.http.HttpStatus;
+import org.apache.http.auth.Credentials;
 import org.apache.http.auth.AuthScope;
 import org.apache.http.auth.NTCredentials;
 import org.apache.http.auth.UsernamePasswordCredentials;
@@ -25,9 +31,10 @@ import org.apache.http.conn.scheme.SchemeRegistry;
 import org.apache.http.conn.ssl.SSLSocketFactory;
 import org.apache.http.entity.ByteArrayEntity;
 import org.apache.http.entity.InputStreamEntity;
-import org.apache.http.impl.auth.DigestSchemeFactory;
 import org.apache.http.impl.client.DefaultHttpClient;
 import org.apache.http.impl.conn.tsccm.ThreadSafeClientConnManager;
+import org.apache.http.impl.auth.DigestScheme;
+import org.apache.http.message.BasicHeader;
 import org.apache.http.params.BasicHttpParams;
 import org.apache.http.params.HttpParams;
 import org.apache.http.params.HttpProtocolParams;
@@ -63,6 +70,8 @@ public class SardineImpl implements Sardine
 
 	/** was a username/password passed in? */
 	boolean authEnabled;
+	final DigestScheme md5Auth = new DigestScheme();
+	final Map<String, Header> cache = new HashMap<String, Header>();
 
 	/** */
 	public SardineImpl(Factory factory) throws SardineException
@@ -121,9 +130,8 @@ public class SardineImpl implements Sardine
 		if ((username != null) && (password != null))
 		{
 			// use standard authentications (BASIC or DIGEST)
-			this.client.getAuthSchemes().register("digest", new DigestSchemeFactory());
 			this.client.getCredentialsProvider().setCredentials(
-	                new AuthScope(AuthScope.ANY_HOST, AuthScope.ANY_PORT, AuthScope.ANY_REALM, "digest"),
+	                new AuthScope(AuthScope.ANY_HOST, AuthScope.ANY_PORT, AuthScope.ANY_REALM, "basic"),
 			new UsernamePasswordCredentials(username, password));
 			
 			this.authEnabled = true;
@@ -430,9 +438,37 @@ public class SardineImpl implements Sardine
 	{
 		try
 		{
-			return this.client.execute(base);
+			if (this.authEnabled) {
+				if (cache.containsKey(base.getMethod())) {
+					base.setHeader(cache.get(base.getMethod()));
+					return this.client.execute(base);
+				} else {
+					final HttpRequestBase request = (HttpRequestBase)base.clone();
+					final HttpResponse response = this.client.execute(request);
+
+					if (response.getStatusLine().getStatusCode() == HttpStatus.SC_UNAUTHORIZED) {
+						final Credentials creds = this.client.getCredentialsProvider().getCredentials(AuthScope.ANY);
+						Header header;
+
+						if (response.containsHeader("WWW-Authenticate")) {
+							md5Auth.processChallenge(response.getHeaders("WWW-Authenticate")[0]);
+							header = md5Auth.authenticate(creds, base);
+						} else {
+							header = new BasicHeader("Authorization", "Basic " + new String(Base64.encodeBase64(new String(creds.getUserPrincipal().getName() + ":" + creds.getPassword()).getBytes())));
+						}
+						request.abort();
+						base.setHeader(header);
+						cache.put(base.getMethod(), header);
+						return this.client.execute(base);
+					} else {
+						return response;
+					}
+				}
+			} else {
+				return this.client.execute(base);
+			}
 		}
-		catch (IOException ex)
+		catch (Exception ex)
 		{
 			base.abort();
 			throw new SardineException(ex);
